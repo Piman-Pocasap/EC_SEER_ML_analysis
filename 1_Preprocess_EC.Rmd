@@ -1,0 +1,605 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+# Load libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+```
+
+## Data selection from SEER
+
+
+
+Dataset was saved as "SEER_dataset.csv"
+
+## Download CSV file
+> setwd("C:/Users/piman/OneDrive - Khon Kaen University/Desktop/SEER_EC")
+
+```{r}
+# Read the CSV file
+# Interactively select the file
+file_path <- file.choose()
+SEER_EC <- read.csv(file_path, stringsAsFactors = FALSE)
+
+# 43764 patients
+```
+
+
+## Data exploratory
+```{r}
+str(SEER_EC)
+```
+
+
+```{r}
+# Function to calculate distinct values and their percentages for a column
+calculate_percentage <- function(column) {
+  total_count <- nrow(SEER_EC)
+  column_summary <- SEER_EC %>%
+    group_by(across(all_of(column))) %>%
+    summarise(count = n()) %>%
+    mutate(percentage = (count / total_count) * 100)
+  return(column_summary)
+}
+
+# Apply the function to each column and store the results in a list
+column_percentages <- lapply(names(SEER_EC), calculate_percentage)
+
+# Display the results for each column
+for (i in 1:length(column_percentages)) {
+  cat("Column:", names(SEER_EC)[i], "\n")
+  print(column_percentages[[i]])
+  cat("\n")
+}
+```
+
+```{r}
+names(SEER_EC) <- c(
+  "ID",                                        # Patient.ID
+  "Age",                                       # Age.recode.with.single.ages.and.90.
+  "Diag_Year",                                 # Year.of.diagnosis
+  "Race",                                      # Race.recode..W..B..AI..API.
+  "Sex",                                       # Sex
+  "Hispanic",                                  # Origin.recode.NHIA..Hispanic..Non.Hisp.
+  "MaritalStatus",                             # Marital.status.at.diagnosis
+  "Income",                                    # Median.household.income.inflation.adj.to.2022
+  "RuralUrban",                                # Rural.Urban.Continuum.Code
+  "SurvivalMonths",                            # Survival.months
+  "CauseSpecificDeath",                        # SEER.cause.specific.death.classification
+  "OtherCauseDeath",                           # SEER.other.cause.of.death.classification
+  "Vital",                                     # Vital.status.recode..study.cutoff.used.
+  "SequenceNumber",                            # Sequence.number
+  "PrimarySite_code",                          # Primary.Site...labeled
+  "Grade",                                     # Grade.Recode..thru.2017.
+  "SummaryStage",                              # SEER.Combined.Summary.Stage.2000..2004.2017.
+  "HistologicBehavior",                        # ICD.O.3.Hist.behav..malignant
+  "AJCC_T",                                    # Derived.AJCC.T..6th.ed..2004.2015.
+  "AJCC_N",                                    # Derived.AJCC.N..6th.ed..2004.2015.
+  "AJCC_M",                                    # Derived.AJCC.M..6th.ed..2004.2015.
+  "TumorSize",                                 # Tumor.Size.Over.Time.Recode..1988..
+  "NodesExamined",                             # Regional.nodes.examined..1988..
+  "NodesPositive",                             # Regional.nodes.positive..1988..
+  "TumorSizeCS",                               # CS.tumor.size..2004.2015.
+  "ExtensionCS",                               # CS.extension..2004.2015.
+  "LymphNodesCS",                              # CS.lymph.nodes..2004.2015.
+  "MetsAtDXCS",                                # CS.mets.at.dx..2004.2015.
+  "InSituMalignantTumorsTotal",                # Total.number.of.in.situ.malignant.tumors.for.patient
+  "BenignTumorsTotal",                         # Total.number.of.benign.borderline.tumors.for.patient
+  "TimeToTreatment",                           # Time.from.diagnosis.to.treatment.in.days.recode
+  "SurgicalTreatment",                         # RX.Summ..Surg.Prim.Site..1998..
+  "ScopeRegionalLNSurgery",                    # RX.Summ..Scope.Reg.LN.Sur..2003..
+  "SurgicalRadiationSequence",                 # RX.Summ..Surg.Rad.Seq
+  "Radiation",                                 # Radiation.recode
+  "Chemotherapy",                              # Chemotherapy.recode..yes..no.unk.
+  "SystemicSurgerySequence",                   # RX.Summ..Systemic.Sur.Seq..2007..
+  "PrimarySite"                                # Primary.Site
+)
+
+```
+
+## Recode data
+
+```{r}
+# Replace 'years' and any non-numeric characters, then convert to integer
+SEER_EC$Age <- as.integer(gsub("[^0-9]", "", SEER_EC$Age))
+
+# For '90+ years', you might want to decide on a specific age to assign
+# For example, if you choose to assign 90 to '90+ years':
+SEER_EC$Age[SEER_EC$Age == 90] <- 90
+```
+
+
+```{r}
+# Recode 'Race' variable
+SEER_EC$Race <- ifelse(SEER_EC$Race == "White", "W",
+                       ifelse(SEER_EC$Race == "Black", "B", "Other"))
+```
+
+
+```{r}
+# Recode 'Sex' variable
+SEER_EC$Sex <- ifelse(SEER_EC$Sex == "Male", 1, 0)
+```
+
+
+```{r}
+# Recode 'Hispanic' variable for Hispanic identification
+SEER_EC$Hispanic <- ifelse(SEER_EC$Hispanic == "Spanish-Hispanic-Latino", 1, 0)
+```
+
+
+```{r}
+# Recode 'MaritalStatus' variable
+SEER_EC$MaritalStatus <- ifelse(SEER_EC$MaritalStatus == "Married (including common law)", 1, 0)
+```
+
+
+```{r}
+# Recode 'Income' variable; Low: Less than $60,000, Medium: $60,000 to $99,999, High: $100,000 and above
+SEER_EC <- SEER_EC %>%
+  mutate(Income = case_when(
+    grepl("< $40,000", Income) | grepl("^\\$40,000 - \\$44,999", Income) | grepl("^\\$45,000 - \\$49,999", Income) |
+    grepl("^\\$50,000 - \\$54,999", Income) | grepl("^\\$55,000 - \\$59,999", Income) ~ "Low",
+    grepl("^\\$60,000 - \\$64,999", Income) | grepl("^\\$65,000 - \\$69,999", Income) | 
+    grepl("^\\$70,000 - \\$74,999", Income) | grepl("^\\$75,000 - \\$79,999", Income) |
+    grepl("^\\$80,000 - \\$84,999", Income) | grepl("^\\$85,000 - \\$89,999", Income) |
+    grepl("^\\$90,000 - \\$94,999", Income) | grepl("^\\$95,000 - \\$99,999", Income) ~ "Medium",
+    grepl("^\\$100,000 - \\$109,999", Income) | grepl("^\\$110,000 - \\$119,999", Income) | 
+    grepl("^\\$120,000\\+", Income) ~ "High",
+    TRUE ~ "Medium"  # Default to Medium if none of the above match
+  ))
+```
+
+
+```{r}
+# Recode 'RuralUrban' variable
+SEER_EC <- SEER_EC %>%
+  mutate(RuralUrban = case_when(
+    grepl("metropolitan", RuralUrban, ignore.case = TRUE) ~ 1,
+    grepl("Nonmetropolitan", RuralUrban, ignore.case = TRUE) ~ 0,
+    TRUE ~ 0  # Default to 0 if none of the above match
+  ))
+```
+
+
+```{r}
+# Convert 'SurvivalMonths' from character to integer
+SEER_EC$SurvivalMonths <- as.integer(SEER_EC$SurvivalMonths)
+```
+
+
+```{r}
+# Recode 'SequenceNumber' variable
+SEER_EC <- SEER_EC %>%
+  mutate(SequenceNumber = case_when(
+    SequenceNumber %in% c("One primary only", "1st of 2 or more primaries") ~ 1,
+    TRUE ~ 0  # Keeps all other values as 0
+  ))
+```
+
+
+```{r}
+# Recode 'PrimarySite_code' variable
+
+# Only remove text after a dash, if it exists, while keeping the code before the dash intact
+SEER_EC$PrimarySite_code <- gsub("-.*", "", SEER_EC$PrimarySite_code)
+
+# Replace '.' with '_' to meet the format requirement 
+SEER_EC$PrimarySite_code <- gsub("\\.", "_", SEER_EC$PrimarySite_code)
+
+```
+
+
+```{r}
+# Recode 'Grade' variable
+SEER_EC <- SEER_EC %>%
+  mutate(Grade = case_when(
+    grepl("Grade I$", Grade) ~ "Grade I",                       # Ensures it ends with "Grade I"
+    grepl("Grade II$", Grade) ~ "Grade II",                     # Ensures it ends with "Grade II"
+    grepl("Grade III$", Grade) ~ "Grade III",                   # Ensures it ends with "Grade III"
+    grepl("Grade IV$", Grade) ~ "Grade IV",                     # Ensures it ends with "Grade IV"
+    TRUE ~ "Unknown"                                           # Handles all other cases
+  ))
+```
+
+
+```{r}
+# Recode 'SummaryStage' variable
+SEER_EC <- SEER_EC %>%
+  mutate(SummaryStage = case_when(
+    SummaryStage == "Distant site(s)/node(s) involved" ~ "Dist+LN",
+    SummaryStage == "Unknown/unstaged/unspecified/DCO" ~ "unknown",
+    SummaryStage == "Localized only" ~ "Local",
+    SummaryStage == "Regional by direct extension only" ~ "Regi+Ext",
+    SummaryStage == "Regional lymph nodes involved only" ~ "Reg+LN",
+    SummaryStage == "Regional by both direct extension and lymph node involvement" ~ "Reg+Ext/LN",
+    TRUE ~ SummaryStage  # Preserves the original value in case of non-matching cases
+  ))
+```
+
+
+```{r}
+# Recode 'HistogoicBehavior' variable
+SEER_EC <- SEER_EC %>%
+  mutate(HistologicBehavior = case_when(
+    grepl("^8000/3:", HistologicBehavior) ~ "Neoplasm",
+    grepl("^8010/3:", HistologicBehavior) ~ "Carcinoma",
+    grepl("^8070/3:", HistologicBehavior) ~ "SCC",
+    grepl("^8071/3:", HistologicBehavior) ~ "SCC_keratinizing",
+    grepl("^8140/3:", HistologicBehavior) ~ "Adenocarcinoma",
+    grepl("^8490/3:", HistologicBehavior) ~ "SRC_carcinoma",
+    TRUE ~ "Other"  # Handles all other cases
+  ))
+```
+
+
+```{r}
+# Recode 'TumorSizeCS' variable
+SEER_EC <- SEER_EC %>%
+  mutate(
+    TumorSizeCS_polyposis = ifelse(TumorSizeCS == 998, 1, 0),  # Create new column based on condition
+    TumorSizeCS = case_when(
+      TumorSizeCS %in% c(999, 888) ~ NA_real_,  # Set 999, and 888, as NA (missing data)
+      TumorSizeCS == 998 ~ 0,
+      TumorSizeCS == 990 ~ 10,
+      TumorSizeCS == 991 ~ 90,
+      TumorSizeCS == 992 ~ 190,
+      TumorSizeCS == 993 ~ 290,
+      TumorSizeCS == 994 ~ 390,
+      TumorSizeCS == 995 ~ 490,
+      between(TumorSizeCS, 1, 10) ~ 10,
+      between(TumorSizeCS, 11, 20) ~ 20,
+      between(TumorSizeCS, 21, 30) ~ 30,
+      between(TumorSizeCS, 31, 40) ~ 40,
+      between(TumorSizeCS, 41, 50) ~ 50,
+      between(TumorSizeCS, 51, 60) ~ 60,
+      between(TumorSizeCS, 61, 70) ~ 70,
+      between(TumorSizeCS, 71, 80) ~ 80,
+      between(TumorSizeCS, 81, 90) ~ 90,
+      between(TumorSizeCS, 91, 100) ~ 100,
+      TumorSizeCS >= 101 & TumorSizeCS <= 989 ~ 10 * ceiling(TumorSizeCS / 10),  # General case for values 101 to 988
+      TRUE ~ TumorSizeCS  # Catch-all in case something is outside expected range
+    )
+  )
+```
+
+
+```{r}
+# Recode 'ExtensionCS' variable
+SEER_EC <- SEER_EC %>%
+  mutate(ExtensionCS = ifelse(ExtensionCS == 999, NA_real_, ExtensionCS))
+```
+
+
+```{r}
+# Recode 'LymphNodesCS' variable
+SEER_EC <- SEER_EC %>%
+  mutate(LymphNodesCS = ifelse(LymphNodesCS == 999, NA_real_, LymphNodesCS))
+```
+
+
+```{r}
+# Recode 'MetsAtDXCS' variable
+SEER_EC <- SEER_EC %>%
+  mutate(MetsAtDXCS = ifelse(MetsAtDXCS == 99, NA_real_, MetsAtDXCS))
+```
+
+ExtensionCS/LymphnodesCS/MetsAtDXCS values refer to specific codes which nor represent "continuous variable".
+Consider to encode the variables before running ML
+
+```{r}
+# Recode 'SurgicalTreatment' variable
+SEER_EC <- SEER_EC %>%
+  mutate(SurgicalTreatment = case_when(
+    SurgicalTreatment == 99 ~ NA_character_,   # Set 99 as NA (missing data)
+    SurgicalTreatment == 0 ~ "No_surgery",
+    SurgicalTreatment == 30 ~ "Partial_esophagectomy",
+    SurgicalTreatment == 40 ~ "Total_esophagectomy",
+    SurgicalTreatment == 80 ~ "Esophagectomy",
+    SurgicalTreatment == 90 ~ "Surgery",
+    between(SurgicalTreatment, 10, 19) ~ "Local_destruction",
+    between(SurgicalTreatment, 20, 29) ~ "Local_excision",
+    between(SurgicalTreatment, 50, 60) ~ "Esophagectomy+",
+    TRUE ~ as.character(SurgicalTreatment)  # Keeps other values as they are, converted to character for consistency
+  ))
+```
+
+
+```{r}
+# Recode 'ScopeRegionalLNSurgery' variable
+SEER_EC <- SEER_EC %>%
+  mutate(ScopeRegionalLNSurgery = case_when(
+    ScopeRegionalLNSurgery == "None" ~ "0",  # Change "None" to 0
+    ScopeRegionalLNSurgery == "Unknown or not applicable" ~ NA_character_,  # Set "Unknown or not applicable" as NA
+    TRUE ~ "1"  # Change all other values to 1
+  ))
+```
+
+
+```{r}
+# Recode 'SurgicalRadiationSequence' variable
+SEER_EC <- SEER_EC %>%
+  mutate(SurgicalRadiationSequence = case_when(
+    SurgicalRadiationSequence %in% c("Radiation prior to surgery", "Radiation before and after surgery") ~ "Rad_before",
+    SurgicalRadiationSequence %in% c("Radiation after surgery", "Surgery both before and after radiation") ~ "Rad_after",
+    TRUE ~ "Other"  # Sets all other values to "Other"
+  ))
+```
+
+
+```{r}
+# Recode 'Radiation' variable
+SEER_EC <- SEER_EC %>%
+  mutate(Radiation = case_when(
+    Radiation %in% c("None/Unknown", "Refused (1988+)") ~ "0",
+    TRUE ~ "1"
+  ))
+```
+
+
+```{r}
+# Recode 'Chemotherapy' variable
+SEER_EC <- SEER_EC %>%
+  mutate(Chemotherapy = ifelse(Chemotherapy == "Yes", "1", "0"))
+
+# 43764 patients
+```
+
+## Exclude data
+
+```{r}
+# Filter "OtherCauseDeath"
+SEER_EC <- SEER_EC %>%
+  filter(!OtherCauseDeath %in% c("Dead (attributable to causes other than this cancer dx)", 
+                                 "Dead (missing/unknown COD)"))
+
+# 36790 patients
+```
+
+
+```{r}
+# Remove rows where SurvivalMonths < 60 and Vital is "Alive"
+SEER_EC <- SEER_EC %>%
+  filter(!(SurvivalMonths < 60 & Vital == "Alive"))
+
+# 36494 patients
+```
+
+
+
+```{r}
+# Filtering rows where SurvivalMonths is less than 1 month
+SEER_EC <- SEER_EC %>%
+  filter(SurvivalMonths >= 1)
+
+# 33128 patients
+```
+
+
+```{r}
+# Check for duplicates in the 'ID' column
+duplicates_in_ID <- SEER_EC[duplicated(SEER_EC$ID) | duplicated(SEER_EC$ID, fromLast = TRUE), ]
+
+# Print the duplicates
+if (nrow(duplicates_in_ID) > 0) {
+    print("Duplicate IDs found:")
+    print(duplicates_in_ID)
+} else {
+    print("No duplicate IDs found.")
+}
+```
+
+```{r}
+# Remove duplicate IDs, keeping the first occurrence of each ID
+SEER_EC <- SEER_EC %>%
+  group_by(ID) %>%
+  filter(row_number() == 1) %>%
+  ungroup()
+
+# 33105 patients
+```
+
+
+```{r}
+# Filter the dataframe for ages between 20 and 80
+SEER_EC <- SEER_EC %>%
+  filter(Age >= 20 & Age <= 80)
+
+# 28478 patients
+```
+
+
+```{r}
+# Remove rows with missing data from SEER_EC
+SEER_EC <- na.omit(SEER_EC)
+
+# 13896 patients
+```
+
+
+## Create dataframe
+
+```{r}
+# Create EC_df by selecting the columns from SEER_EC
+EC_df <- SEER_EC %>%
+  select(ID, 
+         SurvivalMonths,
+         Diag_Year,
+         Age, 
+         Race, 
+         Sex, 
+         Hispanic, 
+         MaritalStatus, 
+         Income, 
+         SequenceNumber, 
+         PrimarySite_code, 
+         Grade, 
+         SummaryStage, 
+         HistologicBehavior, 
+         AJCC_T, 
+         AJCC_N, 
+         AJCC_M, 
+         TumorSizeCS, 
+         TumorSizeCS_polyposis,
+         ExtensionCS, 
+         LymphNodesCS, 
+         MetsAtDXCS, 
+         InSituMalignantTumorsTotal, 
+         BenignTumorsTotal, 
+         SurgicalTreatment, 
+         ScopeRegionalLNSurgery, 
+         SurgicalRadiationSequence, 
+         Radiation, 
+         Chemotherapy, 
+         )
+```
+
+
+## Save dataframe
+
+```{r}
+# Save the cleaned EC_df dataframe to a CSV file
+write.csv(EC_df, "EC_df.csv")
+```
+
+
+```{r}
+# Function to calculate distinct values and their percentages for a column
+calculate_percentage <- function(column) {
+  total_count <- nrow(EC_df)
+  column_summary <- EC_df %>%
+    group_by(across(all_of(column))) %>%
+    summarise(count = n()) %>%
+    mutate(percentage = (count / total_count) * 100)
+  return(column_summary)
+}
+
+# Apply the function to each column and store the results in a list
+column_percentages <- lapply(names(EC_df), calculate_percentage)
+
+# Display the results for each column
+for (i in 1:length(column_percentages)) {
+  cat("Column:", names(EC_df)[i], "\n")
+  print(column_percentages[[i]])
+  cat("\n")
+}
+
+```
+
+
+```{r}
+# Plotting the histogram of SurvivalMonths
+ggplot(EC_df, aes(x = SurvivalMonths)) +
+  geom_histogram(aes(y = ..count..), binwidth = 5, color = "black", fill = "blue", alpha = 0.6) +
+  labs(title = "Distribution of Survival Months",
+       x = "Survival Months",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+```{r}
+# Calculate density data
+density_data <- density(EC_df$SurvivalMonths)
+
+# Convert density data to a data frame
+density_df <- data.frame(SurvivalMonths = density_data$x, Density = density_data$y)
+
+# Plot with histogram, density, and colored areas based on the cutoff
+ggplot(EC_df, aes(x = SurvivalMonths)) +
+  geom_histogram(aes(y = ..count..), binwidth = 4, color = "grey3", fill = "grey", alpha = 0.5) +
+  geom_area(data = subset(density_df, SurvivalMonths < 60),
+            aes(x = SurvivalMonths, y = Density * length(EC_df$SurvivalMonths) * 5), 
+            fill = "#FA8072", alpha = 0.5) +
+  geom_area(data = subset(density_df, SurvivalMonths >= 60),
+            aes(x = SurvivalMonths, y = Density * length(EC_df$SurvivalMonths) * 5), 
+            fill = "#008080", alpha = 0.5) +
+  geom_vline(xintercept = 60, color = "grey9", linetype = "dashed", size = 0.8) +
+  annotate("text", x = 60*1.2, y = max(density_df$Density * length(EC_df$SurvivalMonths) * 5), 
+           label = "60 months", vjust = -0.5, color = "black") +
+  labs(x = "Survival months",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text = element_text(size = 12), # Increase tick label font size
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  xlim(-10, 150)
+```
+
+
+```{r}
+# Ensure Diag_Year is a factor for better categorical plotting
+EC_df$Diag_Year <- as.factor(EC_df$Diag_Year)
+
+# Plot the data using a boxplot without displaying outliers
+ggplot(EC_df, aes(x = Diag_Year, y = SurvivalMonths, fill = Diag_Year)) +
+  geom_boxplot(outlier.color = NA) +  # Exclude outliers by setting outlier color to NA
+  scale_fill_viridis_d(guide = FALSE) +  # Use a discrete color scale and disable the legend
+  labs(title = "Boxplot of Survival Months by Diagnosis Year",
+       x = "Diagnosis Year",
+       y = "Survival Months") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+```
+
+
+```{r}
+# Calculate the median and standard error of the median for each diagnosis year
+median_survival_by_year <- SEER_EC %>%
+  group_by(Diag_Year) %>%
+  summarise(
+    MedianSurvival = median(SurvivalMonths, na.rm = TRUE),
+    SEM = sd(SurvivalMonths, na.rm = TRUE) / sqrt(n())  # Calculating SEM
+  ) %>%
+  mutate(
+    LowerBound = MedianSurvival - SEM,
+    UpperBound = MedianSurvival + SEM
+  )
+
+# Print the data to check SEM and bounds
+print(median_survival_by_year)
+
+# Plot the data with a ribbon for error interval
+ggplot(median_survival_by_year, aes(x = as.numeric(Diag_Year), y = MedianSurvival)) +
+  geom_line(color = "blue") +  # Line plot
+  geom_point(color = "red") +  # Points
+  geom_ribbon(aes(ymin = LowerBound, ymax = UpperBound), fill = "blue", alpha = 0.4) +  # Ribbon for error interval
+  labs(title = "Median Survival Months by Diagnosis Year with Confidence Band",
+       x = "Diagnosis Year",
+       y = "Median Survival Months") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for better readability
+```
+
+
+```{r}
+# Calculate the median SurvivalMonths for each age
+age_survival_stats <- EC_df %>%
+  group_by(Age) %>%
+  summarise(MedianSurvival = median(SurvivalMonths, na.rm = TRUE))
+
+# View the resulting data to ensure correctness
+print(age_survival_stats)
+
+# Plotting the median SurvivalMonths by age
+ggplot(age_survival_stats, aes(x = Age, y = MedianSurvival)) +
+  geom_point(color = "blue") +  # Scatter plot points
+  geom_line(group = 1, color = "red") +  # Connect points with a line
+  labs(title = "Median Survival Months by Age",
+       x = "Age",
+       y = "Median Survival Months") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+
+```{r}
+```
+
