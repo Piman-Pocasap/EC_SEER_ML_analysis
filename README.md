@@ -17,6 +17,7 @@ File	Description
 3_Feature_select_classification_MinMax.py:	Python script for selecting relevant features for ML classification models using Min-Max normalization.
 
 4_EC_df_median.csv:	Dataset containing selected features for classification model input.
+(Note: 4_EC_df_median-revised.csv is an updated CSV with normalization after splitting)
 
 5(0)_ML_comparison.py:	Script to train and compare multiple ML algorithms on the dataset. Detailed evaluations for each model are in files 5(A) to 5(E).
 
